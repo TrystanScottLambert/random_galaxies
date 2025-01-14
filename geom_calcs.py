@@ -1,5 +1,5 @@
 """
-Helper functions for calculating the volume around galaxies in a redshift survey.
+Helper functions for dealing with the geometry such as volume and area.
 """
 
 from dataclasses import dataclass
@@ -34,7 +34,7 @@ def calculate_area_of_rectangular_region(
 
 
 @dataclass
-class SurveyCosmology:
+class SurveyGeometries:
     """
     Survey cosmology class which can be used to calculate volumes.
     """
@@ -68,21 +68,3 @@ class SurveyCosmology:
             area_radians / SKY_AREA
         )  # what percentage of the sky does the survey cover
         return percentage * self.calculate_shell_volume(z_min, z_max)
-
-
-if __name__ == "__main__":
-    cosmo = FlatLambdaCDM(H0=100, Om0=0.3)
-    area = 110 * u.deg**2
-    sc = SurveyCosmology(cosmo, area)
-    shell = sc.calculate_shell_volume(0.3, 0.4)
-    survey = sc.calculate_survey_volume(1, 2)
-    x = calculate_area_of_rectangular_region(
-        129 * u.deg, 141 * u.deg, -2 * u.deg, 3 * u.deg
-    )
-    alpha_1s = np.ones(2) * 129
-    alpha_2s = np.ones(2) * 141
-    dec_1s = np.ones(2) * -2
-    dec_2s = np.ones(2) * 3
-    y = calculate_area_of_rectangular_region(
-        alpha_1s * u.deg, alpha_2s * u.deg, dec_1s * u.deg, dec_2s * u.deg
-    )

@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import astropy.units as u
 from astropy.cosmology import FlatLambdaCDM
-from volume_calcs import SurveyCosmology, calculate_area_of_rectangular_region
+from geom_calcs import SurveyGeometries, calculate_area_of_rectangular_region
 
 
 class TestSurveyCosmology(unittest.TestCase):
@@ -20,14 +20,14 @@ class TestSurveyCosmology(unittest.TestCase):
 
     def setUp(self):
         """Default survey with 100 deg^2 area"""
-        self.default_survey = SurveyCosmology(
+        self.default_survey = SurveyGeometries(
             cosmology=self.default_cosmology, area=100 * u.deg**2
         )
 
     def test_area_unit_validation(self):
         """Testing that non-area quantities return a value error."""
         with self.assertRaises(ValueError):
-            SurveyCosmology(self.default_cosmology, area=10 * u.m)
+            SurveyGeometries(self.default_cosmology, area=10 * u.m)
 
     def test_calculate_shell_volume_single(self):
         """Testing that the shell volume works for single float values."""
@@ -63,7 +63,7 @@ class TestSurveyCosmology(unittest.TestCase):
 
     def test_calculate_shell_volume_known_values(self):
         """Comparing shell volumes to the celestial package in R. (Aaron's version.)"""
-        survey = SurveyCosmology(self.default_cosmology, area=4 * np.pi * u.steradian)
+        survey = SurveyGeometries(self.default_cosmology, area=4 * np.pi * u.steradian)
 
         # Known volumes
         z_min, z_max = 0.3, 0.4
@@ -81,7 +81,7 @@ class TestSurveyCosmology(unittest.TestCase):
         Comparing survey volumes to the celestial package in R. (Aaron's version) by
         expecting half of the shell volume when half the sky area is passed (2pi steradian)
         """
-        survey = SurveyCosmology(self.default_cosmology, area=2 * np.pi * u.steradian)
+        survey = SurveyGeometries(self.default_cosmology, area=2 * np.pi * u.steradian)
 
         # Known scaled volumes
         z_min, z_max = 0.3, 0.4
