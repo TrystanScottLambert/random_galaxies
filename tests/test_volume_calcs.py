@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import astropy.units as u
 from astropy.cosmology import FlatLambdaCDM
-from volume_calcs import SurveyCosmology
+from volume_calcs import SurveyCosmology, calculate_area_of_rectangular_region
 
 
 class TestSurveyCosmology(unittest.TestCase):
@@ -69,7 +69,6 @@ class TestSurveyCosmology(unittest.TestCase):
         z_min, z_max = 0.3, 0.4
         expected_volume = 2.918226 * (u.Gpc**3)
         volume = survey.calculate_shell_volume(z_min, z_max)
-        print(volume)
         self.assertAlmostEqual(volume.to(u.Gpc**3).value, expected_volume.value, places=3)
 
         z_min, z_max = 3, 4
@@ -94,6 +93,57 @@ class TestSurveyCosmology(unittest.TestCase):
         expected_volume = (160.8046 / 2) * (u.Gpc**3)
         volume = survey.calculate_survey_volume(z_min, z_max)
         self.assertAlmostEqual(volume.to(u.Gpc**3).value, expected_volume.value, places=3)
+
+
+class TestCalculateAreaOfRectangularRegion(unittest.TestCase):
+    """
+    Testing the calculate_area_of_rectangular_region function.
+    """
+    def test_single_values(self):
+        """Test the function with single values."""
+        ra1 = 129 * u.deg
+        ra2 = 141 * u.deg
+        dec1 = -2 * u.deg
+        dec2 = 3 * u.deg
+
+        expected_area = 59.97867933 * u.deg**2
+        result = calculate_area_of_rectangular_region(ra1, ra2, dec1, dec2)
+        self.assertAlmostEqual(result.value, expected_area.value, places=5)
+        self.assertEqual(result.unit, expected_area.unit)
+
+    def test_array_values(self):
+        """Test the function with arrays of values."""
+        ra1 = np.array([129, 129]) * u.deg
+        ra2 = np.array([141, 141]) * u.deg
+        dec1 = np.array([-2, -2]) * u.deg
+        dec2 = np.array([3, 3]) * u.deg
+
+        expected_area = np.array([59.97867933, 59.97867933]) * u.deg**2
+        result = calculate_area_of_rectangular_region(ra1, ra2, dec1, dec2)
+        np.testing.assert_almost_equal(result.value, expected_area.value, decimal=5)
+        self.assertEqual(result.unit, expected_area.unit)
+
+    def test_invalid_units(self):
+        """Test error handling for invalid units."""
+        ra1 = 129 * u.m  # Invalid unit
+        ra2 = 141 * u.deg
+        dec1 = -2 * u.deg
+        dec2 = 3 * u.deg
+
+        with self.assertRaises(ValueError) as context:
+            calculate_area_of_rectangular_region(ra1, ra2, dec1, dec2)
+        self.assertIn("Arguments must be in angular units", str(context.exception))
+
+    def test_missing_quantity(self):
+        """Test error handling for missing Quantity (e.g., raw arrays)."""
+        ra1 = np.array([129, 129])  # Not a Quantity
+        ra2 = np.array([141, 141]) * u.deg
+        dec1 = np.array([-2, -2]) * u.deg
+        dec2 = np.array([3, 3]) * u.deg
+
+        with self.assertRaises(ValueError) as context:
+            calculate_area_of_rectangular_region(ra1, ra2, dec1, dec2)
+        self.assertIn("Arrays must be passed as angular Quantities", str(context.exception))
 
 
 if __name__ == "__main__":
