@@ -70,7 +70,6 @@ class Survey:
     k_corrections: np.ndarray[float] = None
 
     def __post_init__(self) -> None:
-        print('we are in here')
         if np.max(self.magnitudes) > self.faint_mag_limit:
             raise ValueError(
                 "There are magnitudes which are fainter than the faint magnitude limit."
@@ -86,7 +85,7 @@ class Survey:
             self.absolute_mags = self.absolute_mags - self.k_corrections
 
         self.bins = np.arange(np.min(self.redshifts), np.max(self.redshifts) + self.binwidth, self.binwidth)
-        self.mid_bins = np.array([(self.bins[i] + self.bins[i+1])/2 for i in range(len(self.bins) - 1)])
+        self.mid_bins = (self.bins[:-1] + self.bins[1:])/2
         self.n_g, _ = np.histogram(self.redshifts, bins = self.bins)
 
         #working out the zmin and zmax for each galaxy.
@@ -133,6 +132,9 @@ class Survey:
         n_r, _ = np.histogram(self.randoms, bins = self.bins)
         delta_vals = self.n_clones * (self.n_g/n_r)
         delta_func = interp1d(self.mid_bins, delta_vals, fill_value='extrapolate')
+        fuck_x = np.linspace(np.min(self.bins), np.max(self.bins), 1000)
+        plt.plot(fuck_x, delta_func(fuck_x))
+        plt.show()
         return delta_func
 
     @property
@@ -219,7 +221,7 @@ if __name__ == "__main__":
     gama_z, gama_mag = np.loadtxt('cut_9.dat', usecols=(-2, -1), unpack=True, skiprows=1)
     gama_k_corrections = k_correction(gama_z)
 
-    gama = Survey(survey, gama_z, gama_mag, 19.8, 11.0, 0.01, k_corrections=gama_k_corrections)
+    gama = Survey(survey, gama_z, gama_mag, 19.8, 17.0, 0.01)
     clones = generate_random_cat(gama)
     bins = np.arange(0, 0.6, 0.005)
     plt.hist(clones, histtype='step', density=True, bins=bins)
