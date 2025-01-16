@@ -2,15 +2,36 @@
 Module which implements the main algorithm for cloning a sample of galaxies.
 """
 
+from warnings import warn
 from dataclasses import dataclass
-import numpy as np
-from scipy.integrate import quad
 import pylab as plt
+import numpy as np
+from scipy.stats import norm
 from scipy.interpolate import interp1d
 from astropy.units import Quantity
-from astropy.cosmology import FlatLambdaCDM, z_at_value
 import astropy.units as u
-from geom_calcs import SurveyGeometries
+from astropy.cosmology import FlatLambdaCDM
+from geom_calcs import SurveyGeometries, calculate_area_of_rectangular_region
+
+
+def _term(redshift, a_value, exponent, q_zref, zref, z_p):
+    """
+    helper function for the k_correction. Within the summation in eq. 8 of Robotham+2011.
+    """
+    return a_value * ((redshift-z_p)**exponent) + q_zref*(redshift - zref)
+
+def k_correction(redshifts):
+    """
+    Calculates the k_correction via eq. 8 of Robotham+2011
+
+    This also includes the e correction so what is returned is the (k+e)(z)
+    """
+    Q_ZREF = 1.75 # when ZREF = 0 
+    A = np.array([[0.2085], [1.0226], [0.5237], [3.5902], [2.3843]])
+    Z_REF = 0
+    Z_P = 0.2
+    val = np.sum([_term(redshifts, a, i, Q_ZREF, Z_REF, Z_P) for i, a in enumerate(A)], axis=0)
+    return val
 
 
 
@@ -24,14 +45,14 @@ def generate_clones(redshift_array: np.ndarray[float], n_copies: np.ndarray[int]
     new_galaxies = np.empty(total_new_galaxies, dtype=redshift_array.dtype)
 
     start_idx = 0
-    for n, z_range, z in zip(n_copies, z_ranges, redshift_array):
+    for n, z_range in zip(n_copies, z_ranges):
         end_idx = start_idx + n
-        #new_galaxies[start_idx:end_idx] = np.random.uniform(z_range[0], z_range[1], n)
-        new_galaxies[start_idx:end_idx] = np.random.uniform(z - 0.01, z + 0.01, n)
+        new_galaxies[start_idx:end_idx] = np.random.uniform(z_range[0], z_range[1], n)
         start_idx = end_idx
 
     combined_array = np.concatenate((redshift_array, new_galaxies))
     return combined_array
+
 
 @dataclass
 class Survey:
@@ -46,17 +67,23 @@ class Survey:
     binwidth: float
     n_clones: int = 400 # default value used in Farrow+2015
     randoms: np.ndarray[float] = None
+    k_corrections: np.ndarray[float] = None
 
     def __post_init__(self) -> None:
+        print('we are in here')
         if np.max(self.magnitudes) > self.faint_mag_limit:
             raise ValueError(
                 "There are magnitudes which are fainter than the faint magnitude limit."
             )
         if np.min(self.magnitudes) < self.bright_mag_limit:
-            raise ValueError(
-                "There are magnitudes which are brighter than the bright magnitude limit."
-            )
+            warn(
+                "There are magnitudes which are brighter than the bright magnitude limit. The zmin for these galaxies will be set to 0."
+                 )
         self.cosmo = self.geometry.cosmology  # I don't want to write this all the time
+
+        self.absolute_mags = self.magnitudes -5*np.log10(self.cosmo.luminosity_distance(self.redshifts).value) - 25
+        if self.k_corrections is not None:
+            self.absolute_mags = self.absolute_mags - self.k_corrections
 
         self.bins = np.arange(np.min(self.redshifts), np.max(self.redshifts) + self.binwidth, self.binwidth)
         self.mid_bins = np.array([(self.bins[i] + self.bins[i+1])/2 for i in range(len(self.bins) - 1)])
@@ -84,10 +111,11 @@ class Survey:
         distances = self.cosmo.luminosity_distance(self.redshifts)
         dist_to_z = interp1d(distances, self.redshifts, fill_value='extrapolate') # approximate inverse
 
-        delta_m = mag_limit - self.magnitudes
-        distance_at_limit = distances * 10 ** (delta_m / 5)
-        z_min = dist_to_z(distance_at_limit)
-        return z_min
+        delta_m = mag_limit - self.absolute_mags
+        distance_at_limit = (10**((delta_m + 5)/5)) * u.pc
+        
+        z_lim = dist_to_z(distance_at_limit.to(u.Mpc).value)
+        return z_lim
 
     @property
     def max_volumes(self) -> np.ndarray[Quantity[u.Mpc**3]]:
@@ -127,7 +155,6 @@ class Survey:
         volumes = volumes * (u.Mpc**3 / u.steradian) * self.geometry.area.unit
         return volumes.to(u.Mpc**3)
 
-
     @property
     def number_copies(self) -> np.ndarray[int]:
         """
@@ -144,8 +171,8 @@ class Survey:
 
         returns the redshift array with the real galaxies + the cloned galaxies. 
         """
-        zs = np.array([self.z_mins, self.z_maxs]).T
-        return generate_clones(self.redshifts, self.number_copies, zs)
+        z_limits = np.array([self.z_mins, self.z_maxs]).T
+        return generate_clones(self.redshifts, self.number_copies, z_limits)
 
     @property
     def windowed_clones(self) -> np.ndarray[float]:
@@ -154,13 +181,31 @@ class Survey:
         applying the gaussian window described in Farrow+2015 (extension of Cole+2011).
         """
 
+def generate_random_cat(survey: Survey, method: str = 'un-windowed') -> np.ndarray[float]:
+    """
+    Creates the random catalog by other using the windowed method or the non window method.
+    """
+    for i in range(15):
+        if method == 'un-windowed':
+            clones = survey.clones
+            print(f'{len(clones)}')
+            survey.randoms = clones
+        elif method == 'windowed':
+            clones = survey.windowed_clones
+            survey.randoms = clones
+        else:
+            raise ValueError('method must be either "un-windowed" or "windowed".')
+        print(f'{i+1} iterations')
+    return clones
+
 
 if __name__ == "__main__":
     cosmo = FlatLambdaCDM(H0=100, Om0=0.3)
-    area = 110 * (u.deg**2)
     test_zs = np.array([0.1, 0.11, 0.2, 0.12, 0.4])  # redshifts
     test_mags = np.array([19, 19.2, 18.4, 18.3, 19.7])  # magntidues
 
+
+    area = calculate_area_of_rectangular_region(129*u.deg, 141*u.deg, -2*u.deg, 3*u.deg)
     survey = SurveyGeometries(cosmo, area)
 
     test_array = np.random.normal(0.2, 0.01, 1000)
@@ -172,7 +217,13 @@ if __name__ == "__main__":
 
     # Testing with actual GAMA data
     gama_z, gama_mag = np.loadtxt('cut_9.dat', usecols=(-2, -1), unpack=True, skiprows=1)
-    gama = Survey(survey, gama_z, gama_mag, 19.8, 11.0, 0.01)
-    clones = gama.clones
-    plt.hist(clones, bins=100)
+    gama_k_corrections = k_correction(gama_z)
+
+    gama = Survey(survey, gama_z, gama_mag, 19.8, 11.0, 0.01, k_corrections=gama_k_corrections)
+    clones = generate_random_cat(gama)
+    bins = np.arange(0, 0.6, 0.005)
+    plt.hist(clones, histtype='step', density=True, bins=bins)
+    published_clones_unwindoes = np.loadtxt('randoms_unpublished.csv', skiprows=1)
+    plt.hist(published_clones_unwindoes, density=True, histtype='step', bins=bins)
+    plt.hist(gama_z, bins=bins, density=True, histtype='step')
     plt.show()

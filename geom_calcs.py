@@ -10,7 +10,6 @@ from astropy.units import Quantity
 
 SKY_AREA = 4 * np.pi * u.steradian
 
-
 def calculate_area_of_rectangular_region(
     alpha_1: Quantity, alpha_2: Quantity, dec_1: Quantity, dec_2: Quantity
 ) -> Quantity[u.deg**2]:
