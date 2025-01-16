@@ -5,6 +5,7 @@ Module which implements the main algorithm for cloning a sample of galaxies.
 from dataclasses import dataclass
 import numpy as np
 from scipy.integrate import quad
+import pylab as plt
 from scipy.interpolate import interp1d
 from astropy.units import Quantity
 from astropy.cosmology import FlatLambdaCDM, z_at_value
@@ -23,9 +24,10 @@ def generate_clones(redshift_array: np.ndarray[float], n_copies: np.ndarray[int]
     new_galaxies = np.empty(total_new_galaxies, dtype=redshift_array.dtype)
 
     start_idx = 0
-    for n, z_range in zip(n_copies, z_ranges):
+    for n, z_range, z in zip(n_copies, z_ranges, redshift_array):
         end_idx = start_idx + n
-        new_galaxies[start_idx:end_idx] = np.random.uniform(z_range[0], z_range[1], n)
+        #new_galaxies[start_idx:end_idx] = np.random.uniform(z_range[0], z_range[1], n)
+        new_galaxies[start_idx:end_idx] = np.random.uniform(z - 0.01, z + 0.01, n)
         start_idx = end_idx
 
     combined_array = np.concatenate((redshift_array, new_galaxies))
@@ -41,7 +43,7 @@ class Survey:
     magnitudes: np.ndarray[float]
     faint_mag_limit: float
     bright_mag_limit: float
-    bins: np.ndarray[float]
+    binwidth: float
     n_clones: int = 400 # default value used in Farrow+2015
     randoms: np.ndarray[float] = None
 
@@ -55,13 +57,15 @@ class Survey:
                 "There are magnitudes which are brighter than the bright magnitude limit."
             )
         self.cosmo = self.geometry.cosmology  # I don't want to write this all the time
+
+        self.bins = np.arange(np.min(self.redshifts), np.max(self.redshifts) + self.binwidth, self.binwidth)
         self.mid_bins = np.array([(self.bins[i] + self.bins[i+1])/2 for i in range(len(self.bins) - 1)])
         self.n_g, _ = np.histogram(self.redshifts, bins = self.bins)
 
         #working out the zmin and zmax for each galaxy.
-        self.z_maxs = self._calculate_z_limit(self.magnitudes, self.redshifts, self.faint_mag_limit)
-        self.z_mins = self._calculate_z_limit(self.magnitudes, self.redshifts, self.bright_mag_limit)
-
+        self.z_maxs = self._calculate_z_limit(self.faint_mag_limit)
+        self.z_mins = self._calculate_z_limit(self.bright_mag_limit)
+    
         if self.randoms is None:
             # Intitial step (before we have delta(z) determined) set deltaz = 1
             # if delta is 1 then the number of copies is n_clones for all gals
@@ -69,12 +73,7 @@ class Survey:
             limits = np.array([self.z_mins, self.z_maxs]).T
             self.randoms = generate_clones(self.redshifts, n_copies.astype(int), limits)
 
-    def _calculate_z_limit(
-        self,
-        apparent_mag: float | np.ndarray[float],
-        redshift: float | np.ndarray[float],
-        mag_limit: float,
-    ) -> float | np.ndarray[float]:
+    def _calculate_z_limit(self, mag_limit) -> float | np.ndarray[float]:
         """
         Determines the mininum redshift value (zmin) where the galaxy would pass the faint magnitude
         limit. This depends on the classic formula m_a - m_b = 5log_10(d_a/d_b).
@@ -82,11 +81,13 @@ class Survey:
         If apparent_mag is larger than the magnitude limit then z will be z_max.
         If apparent_mag is less than the magnitude limit then z will be z_min.
         """
-        distance = self.cosmo.luminosity_distance(redshift)
-        delta_m = mag_limit - apparent_mag
-        distance_at_limit = distance * 10 ** (delta_m / 5)
-        z_min = z_at_value(self.cosmo.luminosity_distance, distance_at_limit)
-        return z_min.value
+        distances = self.cosmo.luminosity_distance(self.redshifts)
+        dist_to_z = interp1d(distances, self.redshifts, fill_value='extrapolate') # approximate inverse
+
+        delta_m = mag_limit - self.magnitudes
+        distance_at_limit = distances * 10 ** (delta_m / 5)
+        z_min = dist_to_z(distance_at_limit)
+        return z_min
 
     @property
     def max_volumes(self) -> np.ndarray[Quantity[u.Mpc**3]]:
@@ -103,7 +104,6 @@ class Survey:
         """
         n_r, _ = np.histogram(self.randoms, bins = self.bins)
         delta_vals = self.n_clones * (self.n_g/n_r)
-        delta_vals[delta_vals==np.nan] = 0
         delta_func = interp1d(self.mid_bins, delta_vals, fill_value='extrapolate')
         return delta_func
 
@@ -134,7 +134,6 @@ class Survey:
         Generates the number of times each galaxy is copied.
         """
         vals = self.n_clones * (self.max_volumes/self.volume_dcs)
-        print(vals)
         return vals.astype(int) # has to be an int
 
     @property
@@ -169,6 +168,11 @@ if __name__ == "__main__":
     z_ranges = np.array([(z-0.005, z+0.005) for z in test_array])
     ns = np.ones(len(test_array)) * 400
 
-    test_survey = Survey(survey, test_array, test_magnitudes, 19.8, 17, np.arange(0, 0.4, 0.001))
-    dc_volumes = test_survey.volume_dcs
-    new_redshifts = test_survey.clones
+    #test_survey = Survey(survey, test_array, test_magnitudes, 19.8, 17, np.arange(0, 0.4, 0.001))
+
+    # Testing with actual GAMA data
+    gama_z, gama_mag = np.loadtxt('cut_9.dat', usecols=(-2, -1), unpack=True, skiprows=1)
+    gama = Survey(survey, gama_z, gama_mag, 19.8, 11.0, 0.01)
+    clones = gama.clones
+    plt.hist(clones, bins=100)
+    plt.show()
