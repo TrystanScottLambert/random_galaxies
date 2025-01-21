@@ -52,9 +52,7 @@ class SurveyGeometries:
         Calculates the simple comoving shell volume from z_min to z_max and returns the volume in
         Mpc^3
         """
-        return self.cosmology.comoving_volume(z_max) - self.cosmology.comoving_volume(
-            z_min
-        )
+        return self.cosmology.comoving_volume(z_max) - self.cosmology.comoving_volume(z_min)
 
     def calculate_survey_volume(
         self, z_min: float | np.ndarray[float], z_max: float | np.ndarray[float]
