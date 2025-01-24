@@ -8,12 +8,15 @@ from dataclasses import dataclass
 import pylab as plt
 import numpy as np
 from scipy.interpolate import interp1d
-from scipy.ndimage import gaussian_filter1d
 from astropy.units import Quantity
+from scipy.integrate import cumulative_trapezoid, quad
 import astropy.units as u
 from astropy.cosmology import FlatLambdaCDM
 from geom_calcs import SurveyGeometries, calculate_area_of_rectangular_region
 
+
+def test_delta(z):
+    return 1
 
 def _term(redshift, a_value, exponent, z_p):
     """
@@ -40,23 +43,19 @@ def generate_clones(redshift_array: np.ndarray[float], n_copies: np.ndarray[int]
     Optimized version of cloning galaxies within the redshift_array.
     """
     total_new_galaxies = np.sum(n_copies)
+    print('This is the number:',total_new_galaxies/len(redshift_array))
 
     # Preallocate array for the new galaxies
     new_galaxies = np.empty(total_new_galaxies, dtype=redshift_array.dtype)
 
     start_idx = 0
-    #for n, z_range in zip(n_copies, z_ranges):
-    #    end_idx = start_idx + n
-    #    new_galaxies[start_idx:end_idx] = np.random.uniform(z_range[0], z_range[1], n)
-    #    start_idx = end_idx
     for n, z_range in zip(n_copies, z_ranges):
         end_idx = start_idx + n
-        fwhm = (z_range[1] - z_range[0])/5
-        z = np.sum(z_range)/2
-        new_galaxies[start_idx:end_idx] = np.random.normal(z, 2*(fwhm/2.355),n)
+        new_galaxies[start_idx:end_idx] = np.random.uniform(z_range[0], z_range[1], n)
         start_idx = end_idx
+    plt.hist(new_galaxies, bins=100)
+    plt.show()
     return new_galaxies
-
 
 @dataclass
 class Survey:
@@ -84,19 +83,21 @@ class Survey:
                  )
         self.cosmo = self.geometry.cosmology  # I don't want to write this all the time
 
-        self.absolute_mags = self.magnitudes -5*np.log10(self.cosmo.luminosity_distance(self.redshifts).value) - 25 + 1.75*(self.redshifts)
+        self.absolute_mags = self.magnitudes -5*np.log10(self.cosmo.luminosity_distance(self.redshifts).value) - 25
         if self.k_corrections is not None:
             self.absolute_mags = self.absolute_mags - self.k_corrections
 
         self.bins = np.arange(np.min(self.redshifts), np.max(self.redshifts) + self.binwidth, self.binwidth)
         self.mid_bins = (self.bins[:-1] + self.bins[1:])/2
         self.n_g, _ = np.histogram(self.redshifts, bins = self.bins, density=True)
-        self.n_g_smoothed = gaussian_filter1d(self.n_g, sigma=3)
 
         #working out the zmin and zmax for each galaxy.
         self.z_maxs = self._calculate_z_limit(self.faint_mag_limit)
         self.z_mins = self._calculate_z_limit(self.bright_mag_limit)
         self.z_mins[self.z_mins < 0] = 0
+
+        # get the max volumes for each galxy. This won't change
+        self.max_volumes = self.geometry.calculate_survey_volume(self.z_mins, self.z_maxs)
     
         if self.randoms is None:
             # Intitial step (before we have delta(z) determined) set deltaz = 1
@@ -118,24 +119,20 @@ class Survey:
 
         delta_m = mag_limit - self.absolute_mags
         distance_at_limit = (10**((delta_m + 5)/5)) * u.pc
-        
+
         z_lim = dist_to_z(distance_at_limit.to(u.Mpc).value)
         return z_lim
-
-    @property
-    def max_volumes(self) -> np.ndarray[Quantity[u.Mpc**3]]:
-        """
-        Calculates the maximum possible volumes that are available to each galaxy.
-        """
-        max_volumes = self.geometry.calculate_survey_volume(self.z_mins, self.z_maxs)
-        return max_volumes
 
     def delta(self) -> np.ndarray[float]:
         """
         Generates the overdensity in redshift of every galaxy at each redshift.
         """
         n_r, _ = np.histogram(self.randoms, bins = self.bins, density=True)
-        delta_vals = self.n_clones * (self.n_g/n_r)
+        plt.plot(self.mid_bins, self.n_g/n_r)
+        plt.axhline(0, color='r')
+        plt.axhline(1, color='k')
+        plt.show()
+        delta_vals =  (self.n_g/n_r)# * self.n_clones
         delta_func = interp1d(self.mid_bins, delta_vals, fill_value='extrapolate')
         return delta_func
 
@@ -145,17 +142,24 @@ class Survey:
         Approximating the integrals of the overdensities. 
         """
         # Create a grid of integrand values that we will approximate.
-        z_grid = np.linspace(np.min(self.z_mins), 0.5, 5000)
-        dv_dz = self.cosmo.differential_comoving_volume(z_grid).value #Mpc3/steradian
-        delta_vals = self.delta()(z_grid)
-        integrand_vals = delta_vals * dv_dz #Mpc3/steradian
+        z_grid = np.linspace(0, 2, 500)
+        dv_dz = self.cosmo.differential_comoving_volume(z_grid) #Mpc3/steradian
+        dv_dz *= self.geometry.area
+        delta_vals = test_delta(z_grid)
+        integrand_vals = delta_vals * dv_dz.to(u.Mpc**3).value
+
+        integrated_vals = [quad()]
 
         #approximate integral
         cummulative_integral = np.cumsum(integrand_vals) * np.gradient(z_grid) # cummulative trapezoid method
-        z_grid_interp = interp1d(z_grid, cummulative_integral, fill_value='extrapolate')
+        cum_trap = cumulative_trapezoid(integrand_vals, z_grid, initial=0)
+        print(len(cum_trap))
+        print(len(cummulative_integral))
+        z_grid_interp = interp1d(z_grid, cum_trap, fill_value='extrapolate')
         volumes = z_grid_interp(self.z_maxs) - z_grid_interp(self.z_mins)
-        volumes *= self.geometry.area.value
-        volumes = volumes * (u.Mpc**3 / u.steradian) * self.geometry.area.unit
+
+        for volume, max_volume, zmin, zmax in zip(volumes, self.max_volumes, self.z_mins, self.z_maxs):
+            print(volume, max_volume, zmin, zmax)
         return volumes.to(u.Mpc**3)
 
     @property
@@ -164,6 +168,10 @@ class Survey:
         Generates the number of times each galaxy is copied.
         """
         vals = self.n_clones * (self.max_volumes/self.volume_dcs)
+        vals[vals < 0] = 0
+        plt.scatter(np.arange(len(vals)),vals)
+        plt.show()
+
         return vals.astype(int) # has to be an int
 
     @property
@@ -188,16 +196,10 @@ def generate_random_cat(survey: Survey, method: str = 'un-windowed') -> np.ndarr
     """
     Creates the random catalog by other using the windowed method or the non window method.
     """
-    no_clones = []
-
-    for i in range(10):
+    for i in range(2):
         if method == 'un-windowed':
             clones = survey.clones
-            n_clones = len(clones)/len(survey.redshifts)
-            no_clones.append(n_clones)
-            n_clones = int(round(n_clones))
-            print(f'{len(clones)}')
-            print(f'n_clones = {n_clones}')
+            print(f'This should be 100: {len(clones)/len(survey.absolute_mags)}')
             survey.randoms = clones
         elif method == 'windowed':
             clones = survey.windowed_clones
@@ -205,7 +207,6 @@ def generate_random_cat(survey: Survey, method: str = 'un-windowed') -> np.ndarr
         else:
             raise ValueError('method must be either "un-windowed" or "windowed".')
         print(f'{i+1} iterations')
-    plt.plot(no_clones)
     return clones
 
 
@@ -223,16 +224,13 @@ if __name__ == "__main__":
     z_ranges = np.array([(z-0.005, z+0.005) for z in test_array])
     ns = np.ones(len(test_array)) * 400
 
-    #test_survey = Survey(survey, test_array, test_magnitudes, 19.8, 17, np.arange(0, 0.4, 0.001))
-
     # Testing with actual GAMA data
     gama_z, gama_mag = np.loadtxt('cut_9.dat', usecols=(-2, -1), unpack=True, skiprows=1)
     gama_k_corrections = k_correction(gama_z)
 
-    gama = Survey(survey, gama_z, gama_mag, 19.8, 16.8, 0.01, k_corrections=gama_k_corrections)
+    gama = Survey(survey, gama_z, gama_mag, 19.8, 17, 0.005, k_corrections=gama_k_corrections)
     clones = generate_random_cat(gama)
-    plt.show()
-    bins = np.arange(0, 0.6, 0.005)
+    bins = np.arange(0, 0.6, 0.001)
     plt.hist(clones, histtype='step', density=True, bins=bins, label='our randoms')
     published_clones_unwindoes = np.loadtxt('randoms_unpublished.csv', skiprows=1)
     plt.hist(published_clones_unwindoes, density=True, histtype='step', bins=bins, label='non-windowed')

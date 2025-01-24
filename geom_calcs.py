@@ -64,4 +64,5 @@ class SurveyGeometries:
         percentage = (
             area_radians / SKY_AREA
         )  # what percentage of the sky does the survey cover
-        return percentage * self.calculate_shell_volume(z_min, z_max)
+        value = percentage * self.calculate_shell_volume(z_min, z_max)
+        return value.to(u.Mpc**3)

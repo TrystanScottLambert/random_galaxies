@@ -112,14 +112,15 @@ def main():
     main function 
     """
     infile =  "../../GAMA_paper_plotter/GAMA_galaxies.dat"
-    redshifts = np.loadtxt(infile, usecols=(-1), unpack=True, skiprows=1,)
+    redshifts = np.loadtxt(infile, usecols=(-1), unpack=True, skiprows=1)
     redshifts = redshifts[(redshifts > 0.01) & (redshifts < 0.6)]
 
     # generating the gama randoms catalog:
     print("creating randoms")
-    randoms = generate_randoms(redshifts, 0.01, 0.6, int(400 * len(redshifts)), 4, smooth=True)
-    print("saving...")
-    np.savetxt("../../GAMA_paper_plotter/GAMA_randoms_skewed_normal.csv", randoms)
+    randoms = generate_randoms(redshifts, 0.01, 1, int(400 * len(redshifts)), 4, smooth=True)
+    print("saving ...")
+    outfile = "../../GAMA_paper_plotter/GAMA_randoms_skewed_normal.csv"
+    np.savetxt(outfile, randoms, header='z', comments='')
 
 if __name__ == "__main__":
     main()
