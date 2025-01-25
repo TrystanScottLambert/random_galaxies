@@ -44,7 +44,7 @@ def generate_clones(redshift_array: np.ndarray[float], n_copies: np.ndarray[int]
     Optimized version of cloning galaxies within the redshift_array.
     """
     total_new_galaxies = np.sum(n_copies)
-    print('This is the number:',total_new_galaxies/len(redshift_array))
+    print('This is the number:', total_new_galaxies/len(redshift_array))
 
     # Preallocate array for the new galaxies
     new_galaxies = np.empty(total_new_galaxies, dtype=redshift_array.dtype)
@@ -54,8 +54,6 @@ def generate_clones(redshift_array: np.ndarray[float], n_copies: np.ndarray[int]
         end_idx = start_idx + n
         new_galaxies[start_idx:end_idx] = np.random.uniform(z_range[0], z_range[1], n)
         start_idx = end_idx
-    plt.hist(new_galaxies, bins=100)
-    plt.show()
     return new_galaxies
 
 @dataclass
@@ -130,8 +128,14 @@ class Survey:
         Generates the overdensity in redshift of every galaxy at each redshift.
         """
         n_r, _ = np.histogram(self.randoms, bins = self.bins, density=True)
-        delta_vals =  self.n_g/n_r# * self.n_clones
-        delta_func = interp1d(self.mid_bins, delta_vals, fill_value='extrapolate')
+        delta_vals =  (self.n_g/n_r) #* self.n_clones
+        pre_x = np.linspace(0, np.min(delta_vals), 10)
+        pre_vals = np.zeros(len(pre_x))
+        post_x = np.linspace(np.max(self.mid_bins)+0.01, np.max(self.z_maxs)+0.01, 100)
+        post_vals = np.zeros(len(post_x))
+        interp_x = np.hstack([pre_x, self.mid_bins, post_x])
+        interp_y = np.hstack([pre_vals, delta_vals, post_vals])
+        delta_func = interp1d(interp_x, interp_y)
         return delta_func
 
     @property
@@ -144,23 +148,36 @@ class Survey:
             area_correction = self.cosmo.differential_comoving_volume(redshift) * self.geometry.area
             return test_delta(redshift) * area_correction.to(u.Mpc**3).value
 
-        print('here')
-        volumes = [quad(integrand, self.z_mins[i], self.z_maxs[i])[0] for i in tqdm(range(len(self.z_mins)))]
-        print('we are done')
+        z_grid = np.linspace(0, np.max(self.z_maxs)+0.01, 10000)
+        cum_trapz = cumulative_trapezoid(integrand(z_grid), z_grid, initial=0)
 
-        #for volume, max_volume, zmin, zmax in zip(volumes, self.max_volumes, self.z_mins, self.z_maxs):
-        #    print(volume, max_volume, zmin, zmax)
-        return volumes.to(u.Mpc**3)
+        #plt.plot(z_grid, integrand(z_grid))
+        #plt.show()
+   
+        cum_func = interp1d(z_grid, cum_trapz)
+        volumes = [cum_func(zmax) - cum_func(zmin) for zmin, zmax in zip(self.z_mins, self.z_maxs)]
+
+        #print(np.where(volumes) == 0)
+        #plt.hist(volumes, bins=100, histtype='step', lw=3, color='r', density=True)
+        #plt.hist(self.max_volumes, bins=100, histtype='step', color='b', density=True)
+        #plt.show()
+
+        _volumes = [quad(integrand, self.z_mins[i], self.z_maxs[i])[0] for i in tqdm(range(len(self.z_mins)))]
+        plt.plot(_volumes, volumes)
+        plt.show()
+
+        #for volume, max_volume in zip(volumes, cum_volumes):
+        #    print(volume, max_volume, volume - max_volume)
+        return volumes *u.Mpc**3
 
     @property
     def number_copies(self) -> np.ndarray[int]:
         """
         Generates the number of times each galaxy is copied.
         """
-        vals = self.n_clones * (self.max_volumes/self.volume_dcs)
-        vals[vals < 0] = 0
-        plt.scatter(np.arange(len(vals)),vals)
-        plt.show()
+        local_volumes = self.volume_dcs
+        vals = self.n_clones * (self.max_volumes/local_volumes)
+        vals[local_volumes == 0*u.Mpc**3] = 0
 
         return vals.astype(int) # has to be an int
 
@@ -204,7 +221,6 @@ if __name__ == "__main__":
     cosmo = FlatLambdaCDM(H0=100, Om0=0.3)
     test_zs = np.array([0.1, 0.11, 0.2, 0.12, 0.4])  # redshifts
     test_mags = np.array([19, 19.2, 18.4, 18.3, 19.7])  # magntidues
-
 
     area = calculate_area_of_rectangular_region(129*u.deg, 141*u.deg, -2*u.deg, 3*u.deg)
     survey = SurveyGeometries(cosmo, area)
