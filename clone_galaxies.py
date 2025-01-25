@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import pylab as plt
 import numpy as np
+from tqdm import tqdm
 from scipy.interpolate import interp1d
 from astropy.units import Quantity
 from scipy.integrate import cumulative_trapezoid, quad
@@ -123,16 +124,13 @@ class Survey:
         z_lim = dist_to_z(distance_at_limit.to(u.Mpc).value)
         return z_lim
 
+    @property
     def delta(self) -> np.ndarray[float]:
         """
         Generates the overdensity in redshift of every galaxy at each redshift.
         """
         n_r, _ = np.histogram(self.randoms, bins = self.bins, density=True)
-        plt.plot(self.mid_bins, self.n_g/n_r)
-        plt.axhline(0, color='r')
-        plt.axhline(1, color='k')
-        plt.show()
-        delta_vals =  (self.n_g/n_r)# * self.n_clones
+        delta_vals =  self.n_g/n_r# * self.n_clones
         delta_func = interp1d(self.mid_bins, delta_vals, fill_value='extrapolate')
         return delta_func
 
@@ -142,24 +140,16 @@ class Survey:
         Approximating the integrals of the overdensities. 
         """
         # Create a grid of integrand values that we will approximate.
-        z_grid = np.linspace(0, 2, 500)
-        dv_dz = self.cosmo.differential_comoving_volume(z_grid) #Mpc3/steradian
-        dv_dz *= self.geometry.area
-        delta_vals = test_delta(z_grid)
-        integrand_vals = delta_vals * dv_dz.to(u.Mpc**3).value
+        def integrand(redshift):
+            area_correction = self.cosmo.differential_comoving_volume(redshift) * self.geometry.area
+            return test_delta(redshift) * area_correction.to(u.Mpc**3).value
 
-        integrated_vals = [quad()]
+        print('here')
+        volumes = [quad(integrand, self.z_mins[i], self.z_maxs[i])[0] for i in tqdm(range(len(self.z_mins)))]
+        print('we are done')
 
-        #approximate integral
-        cummulative_integral = np.cumsum(integrand_vals) * np.gradient(z_grid) # cummulative trapezoid method
-        cum_trap = cumulative_trapezoid(integrand_vals, z_grid, initial=0)
-        print(len(cum_trap))
-        print(len(cummulative_integral))
-        z_grid_interp = interp1d(z_grid, cum_trap, fill_value='extrapolate')
-        volumes = z_grid_interp(self.z_maxs) - z_grid_interp(self.z_mins)
-
-        for volume, max_volume, zmin, zmax in zip(volumes, self.max_volumes, self.z_mins, self.z_maxs):
-            print(volume, max_volume, zmin, zmax)
+        #for volume, max_volume, zmin, zmax in zip(volumes, self.max_volumes, self.z_mins, self.z_maxs):
+        #    print(volume, max_volume, zmin, zmax)
         return volumes.to(u.Mpc**3)
 
     @property
