@@ -8,6 +8,7 @@ import astropy.units as u
 from scipy.interpolate import interp1d
 import pylab as plt
 import pandas as pd
+import tqdm
 
 from geom_calcs import calculate_area_of_rectangular_region
 
@@ -39,6 +40,20 @@ def calculate_z_limit(cosmology, redshifts, absolute_mags, mag_limit) -> float |
     z_lim = dist_to_z(distance_at_limit.to(u.Mpc).value)
     return z_lim
 
+def estimate_lf(data: pd.DataFrame, volume_label: str, luminosity_label: str, lum_bins: np.ndarray) -> np.ndarray:
+    """
+    estimates the LF via a 1/V estimator given the volume label.
+    """
+    estimator = []
+    for i in range(len(lum_bins) - 1):
+        local_bin = data[(data[luminosity_label] < lum_bins[i+1]) & (data[luminosity_label] > lum_bins[i])]
+        if len(local_bin) == 0:
+            estimator.append(np.nan)
+        else:
+            estimator.append(np.sum(1./(local_bin[volume_label])))
+    return np.array(estimator)
+
+
 
 if __name__ == '__main__':
     ap_min, ap_max = 17., 19.65
@@ -58,35 +73,41 @@ if __name__ == '__main__':
     survey_volumes = shell_volumes * fractional_area
     max_volumes = survey_volumes.to(u.Mpc**3)
     gama['max_volumes'] = max_volumes.value
-    #
+    ###
 
     lum_bins = np.arange(gama['lumslog10'].min(), gama['lumslog10'].max() + 0.1, 0.1)
     lum_bins_mid = (lum_bins[:-1] + lum_bins[1:])/2
-    estimator = []
-    for i in range(len(lum_bins) - 1):
-        local_bin = gama[(gama['lumslog10'] < lum_bins[i+1]) & (gama['lumslog10'] > lum_bins[i])]
-        if len(local_bin) == 0:
-            estimator.append(np.nan)
-        else:
-            v_maxs = cosmo.comoving_volume(local_bin['zmaxs']) - cosmo.comoving_volume(local_bin['zmins'])
-            estimator.append(np.sum(1./(v_maxs.value*fractional_area)))
-    estimator = np.array(estimator)
-    plt.plot(lum_bins_mid, np.log10(estimator))
-    plt.show()
+    
+    estimator = estimate_lf(gama, 'max_volumes', 'lumslog10', lum_bins)
+
 
     redshift_bins = np.arange(gama['Z'].min(), gama['Z'].max()+0.01, 0.01)
     mid_redshift_bins = (redshift_bins[:-1] + redshift_bins[1:])/2
-    deltas = []
-    for i in range(len(redshift_bins) -1 ):
-        bin_volume = cosmo.comoving_volume(redshift_bins[i+1]) - cosmo.comoving_volume([redshift_bins[i]])
-        bin_volume = bin_volume*fractional_area
-        local_bin = gama[(gama['Z']>redshift_bins[i]) & (gama['Z'] < redshift_bins[i+1])]
-        limit_ab = convert_ap_to_ab(ap_max, redshift_bins[i+1], cosmo)
-        log10_lum_lim = ab_mag_to_luminosity(limit_ab)
+    for _ in range(10):
+        deltas = []
+        bin_volumes = []
+        for i in range(len(redshift_bins) -1 ):
+            bin_volume = cosmo.comoving_volume(redshift_bins[i+1]) - cosmo.comoving_volume([redshift_bins[i]])
+            bin_volume = bin_volume*fractional_area
+            local_bin = gama[(gama['Z']>redshift_bins[i]) & (gama['Z'] < redshift_bins[i+1])]
+            limit_ab = convert_ap_to_ab(ap_max, redshift_bins[i+1], cosmo)
+            log10_lum_lim = ab_mag_to_luminosity(limit_ab)
 
-        n_p = np.sum(estimator[lum_bins_mid > log10_lum_lim])
+            n_p = np.sum(estimator[lum_bins_mid > log10_lum_lim])
 
-        delta = len(local_bin)/(n_p * bin_volume.value*fractional_area)
-        deltas.append(delta)
-    plt.plot(mid_redshift_bins, deltas)
+            delta = len(local_bin)/(n_p * bin_volume.value)
+            deltas.append(delta)
+            bin_volumes.append(bin_volume)
+        deltas = np.array(deltas)
+        volumes = np.array(bin_volumes)
+
+        v_dc_maxs = []
+        for zmin, zmax in zip(gama['zmins'], gama['zmaxs']):
+            cut = np.where((mid_redshift_bins < zmax) & (mid_redshift_bins > zmin))[0]
+            v_dc_maxs.append(np.sum(deltas[cut] * volumes[cut]))
+        
+        gama['v_dc_maxs'] = np.array(v_dc_maxs)
+        estimator = estimate_lf(gama, 'v_dc_maxs', 'lumslog10', lum_bins)
+        plt.plot(mid_redshift_bins, deltas, label=f'{_}')
+    plt.legend()
     plt.show()
