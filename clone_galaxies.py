@@ -16,16 +16,17 @@ from astropy.cosmology import FlatLambdaCDM
 from geom_calcs import SurveyGeometries, calculate_area_of_rectangular_region
 
 
+
 def test_delta(z):
     return 1
 
-def _term(redshift, a_value, exponent, z_p):
+def _term(redshift: np.ndarray[float], a_value: float, exponent: float, z_p: float) -> np.ndarray[float]:
     """
     helper function for the k_correction. Within the summation in eq. 8 of Robotham+2011.
     """
     return a_value * ((redshift-z_p)**exponent)
 
-def k_correction(redshifts):
+def k_correction(redshifts: np.ndarray[float]) -> np.ndarray[float]:
     """
     Calculates the k_correction via eq. 8 of Robotham+2011
 
@@ -146,12 +147,18 @@ class Survey:
         # Create a grid of integrand values that we will approximate.
         def integrand(redshift):
             area_correction = self.cosmo.differential_comoving_volume(redshift) * self.geometry.area
-            return test_delta(redshift) * area_correction.to(u.Mpc**3).value
+            return self.delta(redshift) * area_correction.to(u.Mpc**3).value
+        
+        def max_vol_integrand(redshift):
+            area = self.cosmo.differential_comoving_volume(redshift) * self.geometry.area
+            return area.to(u.Mpc**3).value
+    
 
         z_grid = np.linspace(0, np.max(self.z_maxs)+0.01, 10000)
         cum_trapz = cumulative_trapezoid(integrand(z_grid), z_grid, initial=0)
 
-        #plt.plot(z_grid, integrand(z_grid))
+        #plt.plot(z_grid, integrand(z_grid), label = 'delta dv/dz')
+        #plt.plot(z_grid, max_vol_integrand(z_grid), label= 'dv/dz')
         #plt.show()
    
         cum_func = interp1d(z_grid, cum_trapz)
@@ -162,9 +169,9 @@ class Survey:
         #plt.hist(self.max_volumes, bins=100, histtype='step', color='b', density=True)
         #plt.show()
 
-        _volumes = [quad(integrand, self.z_mins[i], self.z_maxs[i])[0] for i in tqdm(range(len(self.z_mins)))]
-        plt.plot(_volumes, volumes)
-        plt.show()
+        #_volumes = [quad(integrand, self.z_mins[i], self.z_maxs[i])[0] for i in tqdm(range(len(self.z_mins)))]
+        #plt.plot(_volumes, volumes)
+        #plt.show()
 
         #for volume, max_volume in zip(volumes, cum_volumes):
         #    print(volume, max_volume, volume - max_volume)
@@ -232,18 +239,20 @@ if __name__ == "__main__":
 
     # Testing with actual GAMA data
     gama_z, gama_mag = np.loadtxt('cut_9.dat', usecols=(-2, -1), unpack=True, skiprows=1)
+    gama_z = gama_z[gama_mag > 17.]
+    gama_mag = gama_mag[gama_mag > 17.]
     gama_k_corrections = k_correction(gama_z)
 
-    gama = Survey(survey, gama_z, gama_mag, 19.8, 17, 0.005, k_corrections=gama_k_corrections)
-    clones = generate_random_cat(gama)
-    bins = np.arange(0, 0.6, 0.001)
-    plt.hist(clones, histtype='step', density=True, bins=bins, label='our randoms')
-    published_clones_unwindoes = np.loadtxt('randoms_unpublished.csv', skiprows=1)
-    plt.hist(published_clones_unwindoes, density=True, histtype='step', bins=bins, label='non-windowed')
-    infile= '../../my_tools/group_finders/FoFR/gen_ran_out.randoms.csv'
-    published_clones = np.loadtxt(infile, skiprows=1)
-    plt.hist(published_clones, bins=bins, density=True, histtype='step', label='R')
-    plt.hist(gama_z, bins=bins, density=True, histtype='step', label='GAMA-9 region')
-    plt.xlabel('redshift')
-    plt.legend()
-    plt.show()
+    gama = Survey(survey, gama_z, gama_mag, 19.8, 17, 0.005)#, k_corrections=gama_k_corrections)
+    #clones = generate_random_cat(gama)
+    #bins = np.arange(0, 0.6, 0.001)
+    #plt.hist(clones, histtype='step', density=True, bins=bins, label='our randoms')
+    #published_clones_unwindoes = np.loadtxt('randoms_unpublished.csv', skiprows=1)
+    #plt.hist(published_clones_unwindoes, density=True, histtype='step', bins=bins, label='non-windowed')
+    #infile= '../../my_tools/group_finders/FoFR/gen_ran_out.randoms.csv'
+    #published_clones = np.loadtxt(infile, skiprows=1)
+    #plt.hist(published_clones, bins=bins, density=True, histtype='step', label='R')
+    #plt.hist(gama_z, bins=bins, density=True, histtype='step', label='GAMA-9 region')
+    #plt.xlabel('redshift')
+    #plt.legend()
+    #plt.show()
