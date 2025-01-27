@@ -129,7 +129,9 @@ class Survey:
         Generates the overdensity in redshift of every galaxy at each redshift.
         """
         n_r, _ = np.histogram(self.randoms, bins = self.bins, density=True)
-        delta_vals =  (self.n_g/n_r) #* self.n_clones
+        delta_vals =  (self.n_g/n_r) * self.n_clones
+        plt.plot(self.mid_bins, delta_vals)
+        plt.show()
         pre_x = np.linspace(0, np.min(delta_vals), 10)
         pre_vals = np.zeros(len(pre_x))
         post_x = np.linspace(np.max(self.mid_bins)+0.01, np.max(self.z_maxs)+0.01, 100)
@@ -244,7 +246,7 @@ if __name__ == "__main__":
     gama_k_corrections = k_correction(gama_z)
 
     gama = Survey(survey, gama_z, gama_mag, 19.8, 17, 0.005)#, k_corrections=gama_k_corrections)
-    #clones = generate_random_cat(gama)
+    clones = generate_random_cat(gama)
     #bins = np.arange(0, 0.6, 0.001)
     #plt.hist(clones, histtype='step', density=True, bins=bins, label='our randoms')
     #published_clones_unwindoes = np.loadtxt('randoms_unpublished.csv', skiprows=1)
