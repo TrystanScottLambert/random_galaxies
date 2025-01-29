@@ -105,16 +105,15 @@ def estimate_lf(data: pd.DataFrame, volume_label: str, luminosity_label: str, lu
 
 
 if __name__ == '__main__':
-    ap_min, ap_max = 17., 19.8
+    ap_max = 22
     cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
-    area = calculate_area_of_rectangular_region(129*u.deg, 141*u.deg, -2*u.deg, 3*u.deg)
+    area = 0.0020*u.deg*u.deg #calculate_area_of_rectangular_region(129*u.deg, 141*u.deg, -2*u.deg, 3*u.deg)
     fractional_area = (area.to(u.steradian)/(np.pi*4)).value
 
-    gama = pd.read_csv('cut_9.dat', sep = '\s+')
-    #gama = gama[(gama['Rpetro'] < ap_max) & (gama['Rpetro'] > ap_min)]
-    gama['abs'] = convert_ap_to_ab(gama['Rpetro'], gama['Z'], cosmo)
+    gama = pd.read_csv('~/Downloads/shaun_cole_code/TestData/catalogue.txt', sep = '\s+', skiprows=5)
+    gama['abs'] = convert_ap_to_ab(gama['mag'], gama['z'], cosmo)
     gama['lumslog10'] = ab_mag_to_luminosity(gama['abs'])
-    gama['zmins'] = np.zeros(len(gama))# calculate_z_limit(cosmo, gama['Z'], gama['abs'], ap_min)
+    gama['zmins'] = np.zeros(len(gama))
     gama['zmaxs'] = calculate_z_limit(cosmo, gama['abs'], ap_max)
 
     # working out max volumes
@@ -130,7 +129,6 @@ if __name__ == '__main__':
     lum_bins_mid = (lum_bins[:-1] + lum_bins[1:])/2
 
     estimator = estimate_lf(gama, 'max_volumes', 'lumslog10', lum_bins)
-    estimator *= 100
     popt, pcov = fit_double_power_law(lum_bins_mid, np.log10(estimator))
     log_l_star, log_phi_star, alpha,  beta = popt
 
@@ -139,28 +137,33 @@ if __name__ == '__main__':
     plt.show()
 
     # Redshift bins
-    redshift_bin_width = 0.005
-    redshift_bins = np.arange(gama['Z'].min(), gama['Z'].max()+redshift_bin_width, redshift_bin_width)
+    redshift_bin_width = 0.01
+    redshift_bins = np.arange(gama['z'].min(), gama['z'].max()+redshift_bin_width, redshift_bin_width)
     mid_redshift_bins = (redshift_bins[:-1] + redshift_bins[1:])/2
+    deltas_new = np.ones(len(mid_redshift_bins))
     for j in range(2):
         deltas = []
         bin_volumes = []
+        nps = []
+        actual_counts = []
         for i in range(len(redshift_bins) -1 ):
             bin_volume = cosmo.comoving_volume(redshift_bins[i+1]) - cosmo.comoving_volume([redshift_bins[i]])
             bin_volume = bin_volume * fractional_area
 
-            local_bin = gama[(gama['Z']>=redshift_bins[i]) & (gama['Z'] < redshift_bins[i+1])]
+            local_bin = gama[(gama['z']>=redshift_bins[i]) & (gama['z'] < redshift_bins[i+1])]
             limit_ab = convert_ap_to_ab(ap_max, redshift_bins[i], cosmo)
             log10_lum_lim = ab_mag_to_luminosity(limit_ab)
 
             n_p, _ = quad(double_power_law_not_log, log10_lum_lim, np.inf, args=(log_l_star, log_phi_star, alpha, beta))
-
+            nps.append(n_p)
+            actual_counts.append(len(local_bin))
             delta = len(local_bin)/(n_p * bin_volume.value)
             deltas.append(delta)
             bin_volumes.append(bin_volume.value)
-        deltas = np.array(deltas)
-        deltas = np.ones(len(deltas))
-
+        deltas = np.array(deltas)/np.mean(deltas)
+        abs_diff = np.sum(np.abs(deltas - deltas_new))
+        #print(abs_diff)
+        deltas_new = deltas
 
         delta_func = interp1d(mid_redshift_bins, deltas.reshape(len(deltas)), fill_value=0, bounds_error=False)
 
@@ -169,31 +172,26 @@ if __name__ == '__main__':
             return delta_func(redshift) * volume_element.value
 
         volumes = np.array(bin_volumes)
-
-        zs = np.linspace(0, 0.6, 1000)
-        plt.plot(zs, delta_func(zs))
-        plt.show()
-
-        plt.plot(zs, quad(integrand, 0, zs), label='integral')
-        #plt.plot(zs, cosmo.comoving_volume(zs), label='astropy')
-        plt.legend()
+        volumes = volumes.reshape(len(volumes))
+        plt.plot(mid_redshift_bins, volumes.reshape(len(volumes)) * nps, label='Expected')
+        plt.plot(mid_redshift_bins, actual_counts, label='Real')
         plt.show()
 
         v_dc_maxs = []
         for zmin, zmax in zip(gama['zmins'], gama['zmaxs']):
             cut = np.where((mid_redshift_bins < zmax))[0]
+            #v_dc_maxs.append(quad(integrand, zmin, zmax)[0])
             v_dc_maxs.append(np.sum(deltas[cut] * volumes[cut]))
-            print((np.sum(deltas[cut] * volumes[cut]), quad(integrand, 0, zmax)[0]))
+            #print((np.sum(deltas[cut] * volumes[cut]), quad(integrand, zmin, zmax)[0]), cosmo.comoving_volume(zmax)*fractional_area)
 
 
         gama['v_dc_maxs'] = np.array(v_dc_maxs)
-        print(gama['v_dc_maxs'])
         estimator = estimate_lf(gama, 'v_dc_maxs', 'lumslog10', lum_bins)
         popt, pcov = fit_double_power_law(lum_bins_mid[5:], np.log10(estimator[5:]))
         log_l_star, log_phi_star, alpha,  beta = popt
-        plt.step(lum_bins_mid, np.log10(estimator), where='mid')
-        plt.plot(lum_bins_mid, double_power_law(lum_bins_mid, *popt))
-        plt.show()
+        #plt.step(lum_bins_mid, np.log10(estimator), where='mid')
+        #plt.plot(lum_bins_mid, double_power_law(lum_bins_mid, *popt))
+        #plt.show()
         plt.plot(mid_redshift_bins, deltas, label=f'{j}')
     plt.legend()
     plt.show()

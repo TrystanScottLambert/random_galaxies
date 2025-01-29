@@ -12,9 +12,8 @@ from scipy.interpolate import interp1d
 from astropy.units import Quantity
 from scipy.integrate import cumulative_trapezoid, quad
 import astropy.units as u
-from astropy.cosmology import FlatLambdaCDM
+from astropy.cosmology import FlatLambdaCDM, z_at_value
 from geom_calcs import SurveyGeometries, calculate_area_of_rectangular_region
-
 
 
 def test_delta(z):
@@ -114,13 +113,15 @@ class Survey:
         If apparent_mag is larger than the magnitude limit then z will be z_max.
         If apparent_mag is less than the magnitude limit then z will be z_min.
         """
-        distances = self.cosmo.luminosity_distance(self.redshifts)
-        dist_to_z = interp1d(distances, self.redshifts, fill_value='extrapolate') # approximate inverse
 
         delta_m = mag_limit - self.absolute_mags
-        distance_at_limit = (10**((delta_m + 5)/5)) * u.pc
+        distance_at_limit = (10**((np.array(delta_m) + 5)/5)) * u.pc
 
-        z_lim = dist_to_z(distance_at_limit.to(u.Mpc).value)
+        max_redshift = z_at_value(self.cosmo.luminosity_distance, np.max(distance_at_limit))
+        zs = np.linspace(0, max_redshift+0.1, 10000)
+        distances = self.cosmo.luminosity_distance(zs)
+        dist_to_z = interp1d(distances.to(u.Mpc).value, zs)
+        z_lim = np.array(dist_to_z(distance_at_limit.to(u.Mpc).value))
         return z_lim
 
     @property
@@ -129,7 +130,7 @@ class Survey:
         Generates the overdensity in redshift of every galaxy at each redshift.
         """
         n_r, _ = np.histogram(self.randoms, bins = self.bins, density=True)
-        delta_vals =  (self.n_g/n_r) * self.n_clones
+        delta_vals =  (self.n_g/n_r)
         plt.plot(self.mid_bins, delta_vals)
         plt.show()
         pre_x = np.linspace(0, np.min(delta_vals), 10)
@@ -150,11 +151,11 @@ class Survey:
         def integrand(redshift):
             area_correction = self.cosmo.differential_comoving_volume(redshift) * self.geometry.area
             return self.delta(redshift) * area_correction.to(u.Mpc**3).value
-        
+
         def max_vol_integrand(redshift):
             area = self.cosmo.differential_comoving_volume(redshift) * self.geometry.area
             return area.to(u.Mpc**3).value
-    
+
 
         z_grid = np.linspace(0, np.max(self.z_maxs)+0.01, 10000)
         cum_trapz = cumulative_trapezoid(integrand(z_grid), z_grid, initial=0)
@@ -162,7 +163,7 @@ class Survey:
         #plt.plot(z_grid, integrand(z_grid), label = 'delta dv/dz')
         #plt.plot(z_grid, max_vol_integrand(z_grid), label= 'dv/dz')
         #plt.show()
-   
+
         cum_func = interp1d(z_grid, cum_trapz)
         volumes = [cum_func(zmax) - cum_func(zmin) for zmin, zmax in zip(self.z_mins, self.z_maxs)]
 
@@ -185,9 +186,10 @@ class Survey:
         Generates the number of times each galaxy is copied.
         """
         local_volumes = self.volume_dcs
-        vals = self.n_clones * (self.max_volumes/local_volumes)
+        ratio = self.max_volumes/local_volumes
+        mean_ratio = np.nanmean(ratio[np.isfinite(ratio)])
+        vals = self.n_clones * (ratio/mean_ratio)
         vals[local_volumes == 0*u.Mpc**3] = 0
-
         return vals.astype(int) # has to be an int
 
     @property
@@ -212,7 +214,7 @@ def generate_random_cat(survey: Survey, method: str = 'un-windowed') -> np.ndarr
     """
     Creates the random catalog by other using the windowed method or the non window method.
     """
-    for i in range(2):
+    for i in range(10):
         if method == 'un-windowed':
             clones = survey.clones
             print(f'This should be 100: {len(clones)/len(survey.absolute_mags)}')
@@ -228,16 +230,8 @@ def generate_random_cat(survey: Survey, method: str = 'un-windowed') -> np.ndarr
 
 if __name__ == "__main__":
     cosmo = FlatLambdaCDM(H0=100, Om0=0.3)
-    test_zs = np.array([0.1, 0.11, 0.2, 0.12, 0.4])  # redshifts
-    test_mags = np.array([19, 19.2, 18.4, 18.3, 19.7])  # magntidues
-
     area = calculate_area_of_rectangular_region(129*u.deg, 141*u.deg, -2*u.deg, 3*u.deg)
     survey = SurveyGeometries(cosmo, area)
-
-    test_array = np.random.normal(0.2, 0.01, 1000)
-    test_magnitudes = np.random.normal(18, 0.2, len(test_array))
-    z_ranges = np.array([(z-0.005, z+0.005) for z in test_array])
-    ns = np.ones(len(test_array)) * 400
 
     # Testing with actual GAMA data
     gama_z, gama_mag = np.loadtxt('cut_9.dat', usecols=(-2, -1), unpack=True, skiprows=1)
@@ -245,16 +239,16 @@ if __name__ == "__main__":
     gama_mag = gama_mag[gama_mag > 17.]
     gama_k_corrections = k_correction(gama_z)
 
-    gama = Survey(survey, gama_z, gama_mag, 19.8, 17, 0.005)#, k_corrections=gama_k_corrections)
+    gama = Survey(survey, gama_z, gama_mag, 19.8, 16, 0.005)#, k_corrections=gama_k_corrections)
     clones = generate_random_cat(gama)
-    #bins = np.arange(0, 0.6, 0.001)
-    #plt.hist(clones, histtype='step', density=True, bins=bins, label='our randoms')
-    #published_clones_unwindoes = np.loadtxt('randoms_unpublished.csv', skiprows=1)
-    #plt.hist(published_clones_unwindoes, density=True, histtype='step', bins=bins, label='non-windowed')
-    #infile= '../../my_tools/group_finders/FoFR/gen_ran_out.randoms.csv'
-    #published_clones = np.loadtxt(infile, skiprows=1)
-    #plt.hist(published_clones, bins=bins, density=True, histtype='step', label='R')
-    #plt.hist(gama_z, bins=bins, density=True, histtype='step', label='GAMA-9 region')
-    #plt.xlabel('redshift')
-    #plt.legend()
-    #plt.show()
+    bins = np.arange(0, 0.6, 0.001)
+    plt.hist(clones, histtype='step', density=True, bins=bins, label='our randoms')
+    published_clones_unwindoes = np.loadtxt('randoms_unpublished.csv', skiprows=1)
+    plt.hist(published_clones_unwindoes, density=True, histtype='step', bins=bins, label='non-windowed')
+    infile= '../../my_tools/group_finders/FoFR/gen_ran_out.randoms.csv'
+    published_clones = np.loadtxt(infile, skiprows=1)
+    plt.hist(published_clones, bins=bins, density=True, histtype='step', label='R')
+    plt.hist(gama_z, bins=bins, density=True, histtype='step', label='GAMA-9 region')
+    plt.xlabel('redshift')
+    plt.legend()
+    plt.show()
