@@ -1,2 +1,5 @@
 *.dat
 *.csv
+*.txt
+cole_fortran/TestData/*
+cole_fortran/TestData_Copy/*
