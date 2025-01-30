@@ -22,7 +22,7 @@
   real, parameter :: omega0=0.3,lambda0=0.7 !cosmological parameters
   type(prior_parameters) :: prior!composite variable carrying the prior parameters (see Note 1)
   type(survey_spec) :: survey !composite variable carrying the survey parameters (see Note 2)
-  integer, parameter :: nmult=10 !factor by which you want random catalogue to be larger 
+  integer, parameter :: nmult=400 !factor by which you want random catalogue to be larger 
                                  !than the original input catalogue
   integer, parameter :: nzbin=40 !number of redshift bins used between the min and max 
                                  !redshift of the catalogue.  

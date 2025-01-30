@@ -3,3 +3,7 @@
 *.txt
 cole_fortran/TestData/*
 cole_fortran/TestData_Copy/*
+*.mod
+*.o
+cole_fortran/*.mod
+cole_fortran/*.o
