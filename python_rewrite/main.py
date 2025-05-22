@@ -1,20 +1,11 @@
-"""
-ASCII version of rancat_example.
-Inputs and outputs ASCII data files rather than hdf5.
-
-This program reads an input catalogue with corresponding selection parameters,
-finds the JSWML Luminosity Function (LF) and generates a corresponding random catalogue.
-The random catalogue, the LF and various auxiliary parameters, together
-with a copy of the original catalogue are written to a set of ascii files.
-"""
-
 import numpy as np
 from astropy.cosmology import FlatLambdaCDM
 import pandas as pd
 
-# Import modules that we'll implement later
-from datatypes import SurveySpec, PriorParameters, ModelParameters, Galaxy
-from galaxy_datatype import GalaxyType
+# Updated import from your new module
+from data_classes import SurveySpec, PriorParameters, ModelParameters, Galaxy
+
+# These will be implemented next
 from rancat_subs import rancat_subs
 from jswml import rancat_jswml
 
@@ -27,40 +18,39 @@ def main():
     
     # Set the priors
     prior = PriorParameters()
-    prior.fourPiJ3 = 5000.0  # Galaxy clustering parameter used in density fluctuation prior
-    prior.u = 0.01  # Sigma of Gaussian prior on luminosity evolution parameter
-    prior.a = 0.01  # Sigma of Gaussian prior on density evolution parameter
-    prior.spline = True  # Use B-spline approximation instead of pure Gaussian
+    prior.fourPiJ3 = 5000.0
+    prior.u = 0.01
+    prior.a = 0.01
+    prior.spline = True
     
     # Survey parameters
     survey = SurveySpec()
     
     # Program parameters
-    nmult = 400  # Factor by which random catalogue is larger than original
-    nzbin = 40   # Number of redshift bins between min and max redshift
-    nlf = 25     # Number of absolute magnitude bins in the LF
-    dmag = 0.5   # Magnitude bin spacing
-    nitermax = 400  # Maximum number of iterations
-    iseed = -5875  # Random seed for generating random catalogue
-    search_for_max = False  # Set to True for the method described in the paper
-    verbosity = 2  # Controls amount of info written during execution
-    zref = 0.0  # Reference redshift at which k+e=0
+    nmult = 400
+    nzbin = 40
+    nlf = 25
+    dmag = 0.5
+    nitermax = 400
+    iseed = -5875
+    search_for_max = False
+    verbosity = 2
+    zref = 0.0
     
     # Initialize magnitude bins for luminosity function
     magbin = np.array([-25.0 + i * dmag for i in range(1, nlf+1)])
     
     # Initialize arrays
-    lf = np.zeros(nlf)  # Luminosity function array
-    zbin = np.zeros(nzbin)  # Redshift bins
-    delta = np.zeros(nzbin)  # Overdensity in redshift bins
+    lf = np.zeros(nlf)
+    zbin = np.zeros(nzbin)
+    delta = np.zeros(nzbin)
     
     # Read the input catalogue
     catfile = "TestData/catalogue.txt"
     print(f"Reading input catalogue from {catfile}")
     
-    with open(catfile, 'r') as f:
-        # Skip header line
-        f.readline()
+    with open(catfile, 'r', 'utf8') as f:
+        f.readline()  # Skip header
         
         # Read survey parameters
         line = f.readline().strip().split()
@@ -79,13 +69,10 @@ def main():
         line = f.readline().strip().split()
         ncat = int(line[3])
         
-        # Skip another header line
-        f.readline()
+        f.readline()  # Skip another header line
         
-        # Initialize the catalogue array
         cat = [Galaxy() for _ in range(ncat)]
         
-        # Read galaxy data
         for i in range(ncat):
             line = f.readline().strip().split()
             cat[i].mag = float(line[0])
@@ -94,7 +81,6 @@ def main():
     
     print(f"Catalogue read. ncat={ncat} maglimit={survey.magfaint}\n")
     
-    # Call the main subroutine to find LF and generate random catalogue
     print("Calling rancat_jswml() to iterate to the ML solution")
     par_it = [ModelParameters() for _ in range(nitermax)]
     
@@ -120,11 +106,9 @@ def main():
         verbosity=verbosity
     )
     
-    # Save results to output files
     rancatfile = "TestData/rancat.txt"
     print(f"Saving results in {rancatfile}")
     
-    # Save random catalogue
     with open(rancatfile, 'w') as f:
         f.write("# Parameters:\n")
         f.write(f"# Omega0= {omega0:.4f} Lambda0= {lambda0:.4f}\n")
@@ -136,36 +120,29 @@ def main():
         
         for i in range(nran):
             f.write(f"{rancat[i].mag:.4f} {rancat[i].z:.4f} {rancat[i].absmag:.4f} "
-                   f"{rancat[i].dm:.4f} {rancat[i].pv:.3f} {rancat[i].pvmax:.3f} {rancat[i].id}\n")
+                    f"{rancat[i].dm:.4f} {rancat[i].pv:.3f} {rancat[i].pvmax:.3f} {rancat[i].id}\n")
     
-    # Save iteration history
     print("Saving iteration history")
     with open("TestData/iterations.txt", 'w') as f:
         f.write(f"# nitermax= {nitermax}\n")
         f.write("# u              a              mu             P_post\n")
-        
         for i in range(nitermax):
             f.write(f"{par_it[i].u} {par_it[i].a} {par_it[i].mu} {par_it[i].p_post}\n")
     
-    # Save luminosity function
     print("Saving Luminosity Function")
     with open("TestData/LF.txt", 'w') as f:
         f.write(f"# nmag= {nlf}\n")
         f.write("# mag            LF\n")
-        
         for i in range(nlf):
             f.write(f"{magbin[i]} {lf[i]}\n")
     
-    # Save delta(z)
     print("Saving Delta(z)")
     with open("TestData/delta.txt", 'w') as f:
         f.write(f"# nzbin= {nzbin}\n")
         f.write("# z            delta\n")
-        
-        for i in range(nlf):  # Note: Using nlf here, same as in original
+        for i in range(nlf):  # nlf used here to match original logic
             f.write(f"{zbin[i]} {delta[i]}\n")
     
-    # Save copy of input catalogue with extra parameters
     print("Saving copy of input catalogue but with extra parameters, eg absmag")
     with open("TestData/catalogue_out.txt", 'w') as f:
         f.write("# Selection criteria:\n")
@@ -174,10 +151,9 @@ def main():
         f.write(f"# solid angle= {survey.solid_angle:.4f} square degrees\n")
         f.write(f"# Catalogue: ncat={ncat}\n")
         f.write("# mag    z         absmag     dm       v          vmax     id\n")
-        
         for i in range(ncat):
             f.write(f"{cat[i].mag:.4f} {cat[i].z:.4f} {cat[i].absmag:.4f} "
-                   f"{cat[i].dm:.4f} {cat[i].pv:.3f} {cat[i].pvmax:.3f} {cat[i].id}\n")
+                    f"{cat[i].dm:.4f} {cat[i].pv:.3f} {cat[i].pvmax:.3f} {cat[i].id}\n")
 
 
 if __name__ == "__main__":

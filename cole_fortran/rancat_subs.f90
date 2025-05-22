@@ -302,6 +302,7 @@ subroutine tabulate_binpvolumes(survey,nzbin,zbin,pvolbin,volbin,zref)
      call search_distancemag(rc,zplus1,dlum,pvol,mag,isel,0.0,kpluse,u_dummy,zref)  
      pvolbin(i)=survey%solid_angle*pvol !cumulative volume to upper z (P-weighted)
      volbin(i)=(survey%solid_angle/3.0)*rc**3 !cumulative volume to upper z
+     
      zplus1=1.0+zlo
      call search_distancemag(rc,zplus1,dlum,pvol,mag,isel,0.0,kpluse,u_dummy,zref)   
      pvolbin(i)=pvolbin(i)-survey%solid_angle*pvol !subtract off volume inside lower z
