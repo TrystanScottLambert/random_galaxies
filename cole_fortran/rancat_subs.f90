@@ -302,7 +302,7 @@ subroutine tabulate_binpvolumes(survey,nzbin,zbin,pvolbin,volbin,zref)
      call search_distancemag(rc,zplus1,dlum,pvol,mag,isel,0.0,kpluse,u_dummy,zref)  
      pvolbin(i)=survey%solid_angle*pvol !cumulative volume to upper z (P-weighted)
      volbin(i)=(survey%solid_angle/3.0)*rc**3 !cumulative volume to upper z
-     
+
      zplus1=1.0+zlo
      call search_distancemag(rc,zplus1,dlum,pvol,mag,isel,0.0,kpluse,u_dummy,zref)   
      pvolbin(i)=pvolbin(i)-survey%solid_angle*pvol !subtract off volume inside lower z
@@ -343,7 +343,7 @@ subroutine  derived_gal_props(u,zref,survey,ncat,cat)
      !compute absmag consistent with kpluse assumption and current value of u
      !this is done by using that (cat(i)%absmag-mag) equals the difference between
      !the actual apparent mag, cat(i)%mag, and the required absolute magnitude.
-     cat(i)%absmag=cat(i)%absmag-mag+cat(i)%mag
+     cat(i)%absmag=cat(i)%absmag-   +cat(i)%mag
      !Find the redshift at which this galaxy would fall out of the survey 
      call search_distancemag(rc,zplus1,dlum,pvol,survey%magfaint,5,cat(i)%absmag,kpluse,u,zref)  !5 indicates search on mag 
      if  (zplus1.ge.1.0+survey%zmax) then

@@ -4,11 +4,13 @@ Sub routines for the random catlaogues
 
 import numpy as np
 from astropy.cosmology import FlatLambdaCDM
+import pandas as pd
+from scipy.interpolate import interp1d
 
 
 from user_routines import kcorr, ecorr, decorr_du
-from cosmology import pweighted_volumes
-from data_classes import SurveySpec, Galaxy
+from cosmology import pweighted_volumes, pweighted_volume_simple
+from data_classes import SurveySpec
 
 def kpluse(z, u, zref):
     """
@@ -72,4 +74,41 @@ def tabulate_bin_pvolumes(redshift_bins, fractional_area, zref, Pparam, omega0=0
 
     return volbins, p_vol_bins
 
-def derived_gal_props(u, zref, survey: SurveySpec, catalog: list[Galaxy])
+def z_at_mag(absolute_magnitude: float, u, survey):
+    """
+    interpolates a solution becuaes of the kpluse correction
+    """
+    cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
+    redshifts = np.arange(survey.zmin, survey.zmax, 0.001)
+    dl = cosmo.luminosity_distance(redshifts)
+    apparent_magnitudes = absolute_magnitude + 5 * np.log10(dl) + 25 + kpluse(redshifts, u, zref=0.1)
+
+    # Sort arrays to make sure interpolation is monotonic
+    sort_idx = np.argsort(apparent_magnitudes)
+    mags_sorted = apparent_magnitudes[sort_idx]
+    z_sorted = redshifts[sort_idx]
+
+    # Create interpolation function: m -> z
+    mag_to_z = interp1d(mags_sorted, z_sorted, bounds_error=False, fill_value=np.nan)
+    return mag_to_z(survey.magfaint)
+
+
+def update_catalog(catalog: pd.DataFrame, zref: float, survey: SurveySpec, u: float, a: float) -> pd.DataFrame:
+    """
+    Updates the catalogs magnitudes and pv calculations for every galaxy.
+    """
+    cosmo = FlatLambdaCDM(H0=70, Om0 = 0.3)
+    p_vol_min_total = pweighted_volume_simple(survey.zmin, omega0=0.3, Pparam=a, zref = 0.1, h=0.7)
+    p_vol_min = p_vol_min_total*survey.survey_fractional_area
+
+    luminosity_distances = cosmo.luminosity_distance(catalog['z']).value
+
+    catalog['pv'] = survey.survey_fractional_area * pweighted_volumes(catalog['z'], omega0=0.3, Pparam=a, zref=0.1, h=0.7) - p_vol_min
+    catalog['dm'] = 25 + 5 * np.log10(cosmo.luminosity_distance(catalog['z']).value) + kpluse(catalog['z'], u, zref) #TODO: Check that this doesn't have to be parsecs
+    mag = catalog['absmag'] + 5 * np.log10(luminosity_distances) + 25 + kpluse(catalog['z'], u,zref)
+    catalog['absmag'] = catalog['absmag'] - mag + catalog['mag']
+    catalog['z_max'] = z_at_mag(catalog['absmag'], u, survey)
+    catalog.loc[catalog['z_max'] > survey.zmax, 'z_max'] = survey.zmax - 1e-5
+    catalog['pvmax'] = survey.survey_fractional_area * pweighted_volumes(catalog['z_max'], 0.3, a, 0.1, 0.7)
+
+    return catalog

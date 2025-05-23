@@ -34,7 +34,3 @@ class BinnedZ:
     p_vol: float = 0
     vol: float = 0
     delta: float = 0
-
-@dataclass
-class Galaxy:
-    
