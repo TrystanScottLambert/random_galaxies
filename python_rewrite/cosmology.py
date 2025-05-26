@@ -4,20 +4,17 @@ cosmology module mimicing the fortran code
 
 import numpy as np
 from astropy.cosmology import FlatLambdaCDM
-from scipy.integrate import quad
 
 
 from user_routines import P
 
 
-
-def pweighted_volume_simple(z_target, omega0=0.3, Pparam=1.0, zref=0.0, h=0.7):
+def pweighted_volume_simple(
+        z_target: float, cosmo:FlatLambdaCDM, Pparam: float=1.0, zref:float=0.0):
     """
     Simplified version matching the Fortran implementation more closely
     Uses comoving volume shells
     """
-    # Create cosmology object
-    cosmo = FlatLambdaCDM(H0=100*h, Om0=omega0)
 
     # P function normalization
     P_ref = P(zref, Pparam)
@@ -47,8 +44,9 @@ def pweighted_volume_simple(z_target, omega0=0.3, Pparam=1.0, zref=0.0, h=0.7):
 
     return pv
 
-def pweighted_volumes(redshifts,  omega0=0.3, Pparam=1.0, zref=0.0, h=0.7):
+def pweighted_volumes(
+        redshifts: np.ndarray[float], cosmo: FlatLambdaCDM, Pparam: float=1.0, zref:float=0.0):
     """
     Above function but for multiple redshifts
     """
-    return np.array([pweighted_volume_simple(z, omega0, Pparam, zref, h) for z in redshifts])
+    return np.array([pweighted_volume_simple(z, cosmo, Pparam, zref) for z in redshifts])
